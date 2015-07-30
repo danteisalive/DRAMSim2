@@ -94,13 +94,56 @@ MemoryController::MemoryController(MemorySystem *parent, CSVWriter &csvOut_, ost
 	writeDataCountdown.reserve(NUM_RANKS);
 	writeDataToSend.reserve(NUM_RANKS);
 	refreshCountdown.reserve(NUM_RANKS);
-
+	
 	//Power related packets
 	backgroundEnergy = vector <uint64_t >(NUM_RANKS,0);
 	burstEnergy = vector <uint64_t> (NUM_RANKS,0);
 	actpreEnergy = vector <uint64_t> (NUM_RANKS,0);
 	refreshEnergy = vector <uint64_t> (NUM_RANKS,0);
+	
+	
+	
+	 totalRowsAccessesPerBank = new uint64_t*[NUM_BANKS];
+	for (unsigned i=0; i < NUM_BANKS; ++i)
+			totalRowsAccessesPerBank[i] = new uint64_t[NUM_ROWS]();
+	//////////////////////////////////////////////////////////////////////////////
+	correctableErrors = new unsigned* [NUM_RANKS];
+	uncorrectableErrors = new unsigned* [NUM_RANKS];
+	for (unsigned i=0; i < NUM_RANKS;i++){
+		correctableErrors[i] = new unsigned[262144];
+		uncorrectableErrors[i] = new unsigned[262144];
+	}
 
+	for (unsigned i =0 ; i < NUM_RANKS ; i++)
+		for (unsigned j=0; j < 262144 ; j++){
+			correctableErrors[i][j] =0;
+			uncorrectableErrors[i][j] =0;
+	}
+		/////////////////////////////////////////////////////////////////////////
+		//cout << "NUM_RANKS:" << NUM_RANKS << endl;
+		scrubingEnergy = new uint64_t[NUM_RANKS];
+		testEnergy = new uint64_t[NUM_RANKS];
+
+		for (unsigned i =0; i< NUM_RANKS;i++){
+			scrubingEnergy[i] = 0;
+			testEnergy[i] = 0;
+		}
+		rowsRefreshContdown = new uint64_t*[NUM_RANKS];
+		for (unsigned i=0; i < NUM_RANKS; ++i)
+			rowsRefreshContdown[i] = new uint64_t[8192];
+
+		rowsRefreshInit = new uint64_t*[NUM_RANKS];
+		for (unsigned i=0; i < NUM_RANKS; ++i)
+			rowsRefreshInit[i] = new uint64_t[8192];
+
+
+		for (unsigned i=0; i < NUM_RANKS; i++)
+			for (unsigned j=0; j < 8192; j++){
+					rowsRefreshContdown[i][j] = 1 ;
+					rowsRefreshInit[i][j] = 1;
+				}
+		refreshRow = new unsigned[NUM_RANKS]();
+	////////////////////////////////////////////////////////////////////////////
 	totalEpochLatency = vector<uint64_t> (NUM_RANKS*NUM_BANKS,0);
 
 	//staggers when each rank is due for a refresh
@@ -129,7 +172,7 @@ void MemoryController::receiveFromBus(BusPacket *bpacket)
 	//add to return read data queue
 	returnTransaction.push_back(new Transaction(RETURN_DATA, bpacket->physicalAddress, bpacket->data));
 	totalReadsPerBank[SEQUENTIAL(bpacket->rank,bpacket->bank)]++;
-
+	 //totalRowsAccessesPerBank[bpacket->bank][bpacket->row]++;
 	// this delete statement saves a mindboggling amount of memory
 	delete(bpacket);
 }
@@ -178,10 +221,10 @@ void MemoryController::update()
 						bankStates[i][j].stateChangeCountdown = tRP;
 						break;
 
-					case REFRESH:
-					case PRECHARGE:
-						bankStates[i][j].currentBankState = Idle;
-						break;
+					//case REFRESH:
+					//case PRECHARGE:
+					//	bankStates[i][j].currentBankState = Idle;
+					//	break;
 					default:
 						break;
 					}
@@ -253,6 +296,7 @@ void MemoryController::update()
 
 			totalTransactions++;
 			totalWritesPerBank[SEQUENTIAL(writeDataToSend[0]->rank,writeDataToSend[0]->bank)]++;
+			//totalRowsAccessesPerBank[writeDataToSend[0]->bank][writeDataToSend[0]->row]++;
 
 			writeDataCountdown.erase(writeDataCountdown.begin());
 			writeDataToSend.erase(writeDataToSend.begin());
@@ -261,19 +305,37 @@ void MemoryController::update()
 
 	//if its time for a refresh issue a refresh
 	// else pop from command queue if it's not empty
+	
 	if (refreshCountdown[refreshRank]==0)
 	{
-		commandQueue.needRefresh(refreshRank);
-		(*ranks)[refreshRank]->refreshWaiting = true;
+		rowsRefreshContdown[refreshRank][refreshRow[refreshRank]]--;
+		if (rowsRefreshContdown[refreshRank][refreshRow[refreshRank]] == 0){
+			// Every 7800NS a refresh is asserted, if a refresh for row issued then these two line will be excuted.
+			commandQueue.needRefresh(refreshRank);
+			(*ranks)[refreshRank]->refreshWaiting = true;
+			rowsRefreshContdown[refreshRank][refreshRow[refreshRank]] = rowsRefreshInit[refreshRank][refreshRow[refreshRank]];
+			refreshEnergy[refreshRank] += 1;
+		}
+		
+
+
 		refreshCountdown[refreshRank] =	 REFRESH_PERIOD/tCK;
+		
+		refreshRow[refreshRank]++;
 		refreshRank++;
 		if (refreshRank == NUM_RANKS)
 		{
 			refreshRank = 0;
 		}
+		if (refreshRow[refreshRank] == 8192)
+		{
+			refreshRow[refreshRank] = 0;
+		}
 	}
+	
+
 	//if a rank is powered down, make sure we power it up in time for a refresh
-	else if (powerDown[refreshRank] && refreshCountdown[refreshRank] <= tXP)
+	//else if (powerDown[refreshRank] && refreshCountdown[refreshRank] <= tXP)
 	{
 		(*ranks)[refreshRank]->refreshWaiting = true;
 	}
@@ -414,6 +476,7 @@ void MemoryController::update()
 				}
 
 				break;
+				
 			case ACTIVATE:
 				//add energy to account for total
 				if (DEBUG_POWER)
@@ -455,7 +518,7 @@ void MemoryController::update()
 				{
 					PRINT(" ++ Adding Refresh energy to total energy");
 				}
-				refreshEnergy[rank] += (IDD5 - IDD3N) * tRFC * NUM_DEVICES;
+				//refreshEnergy[rank] += (IDD5 - IDD3N) * tRFC * NUM_DEVICES;
 
 				for (size_t i=0;i<NUM_BANKS;i++)
 				{
@@ -466,6 +529,7 @@ void MemoryController::update()
 				}
 
 				break;
+				
 			default:
 				ERROR("== Error - Popped a command we shouldn't have of type : " << poppedBusPacket->busPacketType);
 				exit(0);
@@ -489,6 +553,7 @@ void MemoryController::update()
 
 	}
 
+	  //Transaction scheduler
 	for (size_t i=0;i<transactionQueue.size();i++)
 	{
 		//pop off top transaction from queue
@@ -524,8 +589,8 @@ void MemoryController::update()
 				PRINT("  Col  : " << newTransactionColumn);
 			}
 
-
-
+			
+			totalRowsAccessesPerBank[newTransactionBank][newTransactionRow]++;
 			//now that we know there is room in the command queue, we can remove from the transaction queue
 			transactionQueue.erase(transactionQueue.begin()+i);
 
@@ -702,7 +767,7 @@ void MemoryController::update()
 	//decrement refresh counters
 	for (size_t i=0;i<NUM_RANKS;i++)
 	{
-		refreshCountdown[i]--;
+		refreshCountdown[i] -= REFRESH_PERIOD/tCK;
 	}
 
 	//
@@ -771,6 +836,7 @@ bool MemoryController::addTransaction(Transaction *trans)
 	{
 		trans->timeAdded = currentClockCycle;
 		transactionQueue.push_back(trans);
+		//totalRowsAccessesPerBank
 		return true;
 	}
 	else 
@@ -865,7 +931,7 @@ void MemoryController::printStats(bool finalStats)
 		// factor of 1000 at the end is to account for the fact that totalEnergy is accumulated in mJ since IDD values are given in mA
 		backgroundPower[r] = ((double)backgroundEnergy[r] / (double)(cyclesElapsed)) * Vdd / 1000.0;
 		burstPower[r] = ((double)burstEnergy[r] / (double)(cyclesElapsed)) * Vdd / 1000.0;
-		refreshPower[r] = ((double) refreshEnergy[r] / (double)(cyclesElapsed)) * Vdd / 1000.0;
+		refreshPower[r] = (double)refreshEnergy[r];
 		actprePower[r] = ((double)actpreEnergy[r] / (double)(cyclesElapsed)) * Vdd / 1000.0;
 		averagePower[r] = ((backgroundEnergy[r] + burstEnergy[r] + refreshEnergy[r] + actpreEnergy[r]) / (double)cyclesElapsed) * Vdd / 1000.0;
 
@@ -886,12 +952,16 @@ void MemoryController::printStats(bool finalStats)
 		//	cout << "c="<<myChannel<< " r="<<r<<"writing to csv out on cycle "<< currentClockCycle<<endl;
 			// write the vis file output
 			csvOut << CSVWriter::IndexedName("Background_Power",myChannel,r) <<backgroundPower[r];
+			csvOut << CSVWriter::IndexedName("Background_Power",myChannel,r) <<backgroundPower[r];
 			csvOut << CSVWriter::IndexedName("ACT_PRE_Power",myChannel,r) << actprePower[r];
 			csvOut << CSVWriter::IndexedName("Burst_Power",myChannel,r) << burstPower[r];
 			csvOut << CSVWriter::IndexedName("Refresh_Power",myChannel,r) << refreshPower[r];
 			double totalRankBandwidth=0.0;
 			for (size_t b=0; b<NUM_BANKS; b++)
-			{
+			{	
+				csvOut << CSVWriter::IndexedName("Reads",myChannel,r,b) << totalReadsPerBank[SEQUENTIAL(r,b)];
+				csvOut << CSVWriter::IndexedName("Writes",myChannel,r,b) << totalWritesPerBank[SEQUENTIAL(r,b)];
+				csvOut << CSVWriter::IndexedName("TotalAccesses",myChannel,r,b) << (totalWritesPerBank[SEQUENTIAL(r,b)] + totalReadsPerBank[SEQUENTIAL(r,b)]);
 				csvOut << CSVWriter::IndexedName("Bandwidth",myChannel,r,b) << bandwidth[SEQUENTIAL(r,b)];
 				totalRankBandwidth += bandwidth[SEQUENTIAL(r,b)];
 				totalAggregateBandwidth += bandwidth[SEQUENTIAL(r,b)];
@@ -926,8 +996,8 @@ void MemoryController::printStats(bool finalStats)
 				csvOut.getOutputStream() << it->first <<"="<< it->second << endl;
 			}
 		}
-		if (currentClockCycle % EPOCH_LENGTH == 0)
-		{
+		//if (currentClockCycle % EPOCH_LENGTH == 0)
+		//{
 			PRINT( " --- Grand Total Bank usage list");
 			for (size_t i=0;i<NUM_RANKS;i++)
 			{
@@ -937,8 +1007,15 @@ void MemoryController::printStats(bool finalStats)
 					PRINT( "  b"<<j<<": "<<grandTotalBankAccesses[SEQUENTIAL(i,j)]);
 				}
 			}
-		}
+		//}
+			for (size_t j=0; j < NUM_ROWS ; j++) {
+				for (size_t i=0; i < NUM_BANKS; i++)
+					PRINTN("    b" << i << ": " << " r" << j << ": " << totalRowsAccessesPerBank[i][j]);
+				PRINTN("\n");
+			}
 
+			
+			
 	}
 
 
@@ -975,4 +1052,17 @@ void MemoryController::insertHistogram(unsigned latencyValue, unsigned rank, uns
 	totalEpochLatency[SEQUENTIAL(rank,bank)] += latencyValue;
 	//poor man's way to bin things.
 	latencies[(latencyValue/HISTOGRAM_BIN_SIZE)*HISTOGRAM_BIN_SIZE]++;
+}
+
+
+
+void MemoryController::updateRefreshTable(unsigned r , unsigned rG , uint64_t newRef){
+
+	rowsRefreshInit[r][rG] = newRef;
+
+}
+
+uint64_t MemoryController::getRefreshTable(unsigned r ,unsigned rG){
+
+	return rowsRefreshInit[r][rG];
 }

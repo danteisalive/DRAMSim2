@@ -211,14 +211,16 @@ void *parseTraceFileLine(string &line, uint64_t &addr, enum TransactionType &tra
 		spaceIndex = line.find_first_of(" ", 0);
 
 		addressStr = line.substr(0, spaceIndex);
+		//cout << addressStr << endl;
 		previousIndex = spaceIndex;
 
 		spaceIndex = line.find_first_not_of(" ", previousIndex);
 		cmdStr = line.substr(spaceIndex, line.find_first_of(" ", spaceIndex) - spaceIndex);
 		previousIndex = line.find_first_of(" ", spaceIndex);
-
+		//cout << cmdStr << endl;
 		spaceIndex = line.find_first_not_of(" ", previousIndex);
 		ccStr = line.substr(spaceIndex, line.find_first_of(" ", spaceIndex) - spaceIndex);
+		//cout << addressStr << " " << cmdStr << " " << ccStr << endl;
 
 		if (cmdStr.compare("IFETCH")==0||
 		        cmdStr.compare("READ")==0)
@@ -369,19 +371,22 @@ IniReader::OverrideMap *parseParamOverrides(const string &kv_str)
 
 int main(int argc, char **argv)
 {
+	bool tempCheck;
 	int c;
 	TraceType traceType;
 	string traceFileName;
 	string systemIniFilename("system.ini");
 	string deviceIniFilename;
+	string refreshMapFilename;
 	string pwdString;
 	string *visFilename = NULL;
 	unsigned megsOfMemory=2048;
 	bool useClockCycle=true;
 	
-	IniReader::OverrideMap *paramOverrides = NULL; 
 
-	unsigned numCycles=1000;
+	IniReader::OverrideMap *paramOverrides = NULL; 
+					   //one hour
+	uint64_t numCycles=24 * 3*17*48146413111;
 	//getopt stuff
 	while (1)
 	{
@@ -390,7 +395,7 @@ int main(int argc, char **argv)
 			{"deviceini", required_argument, 0, 'd'},
 			{"tracefile", required_argument, 0, 't'},
 			{"systemini", required_argument, 0, 's'},
-
+			{"refreshMap" , required_argument , 0 , 'm'},
 			{"pwd", required_argument, 0, 'p'},
 			{"numcycles",  required_argument,	0, 'c'},
 			{"option",  required_argument,	0, 'o'},
@@ -401,7 +406,7 @@ int main(int argc, char **argv)
 			{0, 0, 0, 0}
 		};
 		int option_index=0; //for getopt
-		c = getopt_long (argc, argv, "t:s:c:d:o:p:S:v:qn", long_options, &option_index);
+		c = getopt_long (argc, argv, "t:s:c:d:m:o:p:S:v:qn", long_options, &option_index);
 		if (c == -1)
 		{
 			break;
@@ -433,6 +438,9 @@ int main(int argc, char **argv)
 			break;
 		case 'd':
 			deviceIniFilename = string(optarg);
+			break;
+		case 'm':
+			refreshMapFilename = string(optarg);
 			break;
 		case 'c':
 			numCycles = atoi(optarg);
@@ -505,9 +513,8 @@ int main(int argc, char **argv)
 
 	ifstream traceFile;
 	string line;
-
-
-	MultiChannelMemorySystem *memorySystem = new MultiChannelMemorySystem(deviceIniFilename, systemIniFilename, pwdString, traceFileName, megsOfMemory, visFilename, paramOverrides);
+	//cout << "hi there!" <<  refreshMapFilename;
+	MultiChannelMemorySystem *memorySystem = new MultiChannelMemorySystem(refreshMapFilename, deviceIniFilename, systemIniFilename, pwdString, traceFileName, megsOfMemory, visFilename, paramOverrides);
 	// set the frequency ratio to 1:1
 	memorySystem->setCPUClockSpeed(0); 
 
@@ -540,18 +547,25 @@ int main(int argc, char **argv)
 		cout << "== Error - Could not open trace file"<<endl;
 		exit(0);
 	}
-
-	for (size_t i=0;i<numCycles;i++)
+	uint64_t tick = (REFRESH_PERIOD/tCK);
+	uint64_t tick_b = tick * 8192 * 128;
+	//printf("%lu %lu\n", tick , tick_b );
+	for (uint64_t i=0; i < numCycles; i = i + tick)
 	{
+		//cout << i << endl ;
 		if (!pendingTrans)
 		{
-			if (!traceFile.eof())
-			{
+			//cout << "gotline!!!!" << endl ;
+			if ((tempCheck =!traceFile.eof()))
+			{   
+				//cout << tempCheck << endl;
 				getline(traceFile, line);
-
+				
 				if (line.size() > 0)
 				{
+
 					data = parseTraceFileLine(line, addr, transType,clockCycle, traceType,useClockCycle);
+					//cout << "addr = " << addr <<" transType = " << transType << " clockCycle = " << clockCycle << endl;
 					trans = new Transaction(transType, addr, data);
 					alignTransactionAddress(*trans); 
 
@@ -601,6 +615,9 @@ int main(int argc, char **argv)
 		}
 
 		(*memorySystem).update();
+
+		if (i % tick_b == 0)
+			printf("%lu\n", i );
 	}
 
 	traceFile.close();

@@ -39,12 +39,11 @@
 #include "IniReader.h"
 
 
-
 using namespace DRAMSim; 
 
 
-MultiChannelMemorySystem::MultiChannelMemorySystem(const string &deviceIniFilename_, const string &systemIniFilename_, const string &pwd_, const string &traceFilename_, unsigned megsOfMemory_, string *visFilename_, const IniReader::OverrideMap *paramOverrides)
-	:megsOfMemory(megsOfMemory_), deviceIniFilename(deviceIniFilename_),
+MultiChannelMemorySystem::MultiChannelMemorySystem(const string &refreshMapFilename_ , const string &deviceIniFilename_, const string &systemIniFilename_, const string &pwd_, const string &traceFilename_, unsigned megsOfMemory_, string *visFilename_, const IniReader::OverrideMap *paramOverrides)
+	:megsOfMemory(megsOfMemory_), deviceIniFilename(deviceIniFilename_), refreshMapFilename(refreshMapFilename_),
 	systemIniFilename(systemIniFilename_), traceFilename(traceFilename_),
 	pwd(pwd_), visFilename(visFilename_), 
 	clockDomainCrosser(new ClockDomain::Callback<MultiChannelMemorySystem, void>(this, &MultiChannelMemorySystem::actual_update)),
@@ -96,7 +95,7 @@ MultiChannelMemorySystem::MultiChannelMemorySystem(const string &deviceIniFilena
 	}
 	for (size_t i=0; i<NUM_CHANS; i++)
 	{
-		MemorySystem *channel = new MemorySystem(i, megsOfMemory/NUM_CHANS, (*csvOut), dramsim_log);
+		MemorySystem *channel = new MemorySystem(refreshMapFilename, i, megsOfMemory/NUM_CHANS, (*csvOut), dramsim_log);
 		channels.push_back(channel);
 	}
 }
@@ -373,15 +372,17 @@ void MultiChannelMemorySystem::update()
 }
 void MultiChannelMemorySystem::actual_update() 
 {
+	uint64_t tick = (REFRESH_PERIOD/tCK);
+	uint64_t tick_b = tick * 8192 * 16 * 60;
 	if (currentClockCycle == 0)
 	{
 		InitOutputFiles(traceFilename);
 		DEBUG("DRAMSim2 Clock Frequency ="<<clockDomainCrosser.clock1<<"Hz, CPU Clock Frequency="<<clockDomainCrosser.clock2<<"Hz"); 
 	}
 
-	if (currentClockCycle % EPOCH_LENGTH == 0)
+	if (currentClockCycle % tick_b == 0)
 	{
-		(*csvOut) << "ms" <<currentClockCycle * tCK * 1E-6; 
+		(*csvOut) << "s" <<currentClockCycle * tCK * 1e-9; 
 		for (size_t i=0; i<NUM_CHANS; i++)
 		{
 			channels[i]->printStats(false); 
@@ -395,7 +396,7 @@ void MultiChannelMemorySystem::actual_update()
 	}
 
 
-	currentClockCycle++; 
+	currentClockCycle += tick; 
 }
 unsigned MultiChannelMemorySystem::findChannelNumber(uint64_t addr)
 {
@@ -478,7 +479,7 @@ bool MultiChannelMemorySystem::willAcceptTransaction()
 
 void MultiChannelMemorySystem::printStats(bool finalStats) {
 
-	(*csvOut) << "ms" <<currentClockCycle * tCK * 1E-6; 
+	(*csvOut) << "s" <<currentClockCycle * tCK * 1e-9; 
 	for (size_t i=0; i<NUM_CHANS; i++)
 	{
 		PRINT("==== Channel ["<<i<<"] ====");
@@ -532,8 +533,8 @@ int MultiChannelMemorySystem::getIniFloat(const std::string& field, float *val)
 }
 
 namespace DRAMSim {
-MultiChannelMemorySystem *getMemorySystemInstance(const string &dev, const string &sys, const string &pwd, const string &trc, unsigned megsOfMemory, string *visfilename) 
+MultiChannelMemorySystem *getMemorySystemInstance(const string &map,const string &dev, const string &sys, const string &pwd, const string &trc, unsigned megsOfMemory, string *visfilename) 
 {
-	return new MultiChannelMemorySystem(dev, sys, pwd, trc, megsOfMemory, visfilename);
+	return new MultiChannelMemorySystem(map , dev, sys, pwd, trc, megsOfMemory, visfilename);
 }
 }

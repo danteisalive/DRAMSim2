@@ -72,7 +72,7 @@ extern bool USE_LOW_POWER;
 extern bool VIS_FILE_OUTPUT;
 
 extern uint64_t TOTAL_STORAGE;
-extern unsigned NUM_BANKS;
+extern unsigned NUM_BANKS ;
 extern unsigned NUM_BANKS_LOG;
 extern unsigned NUM_RANKS;
 extern unsigned NUM_RANKS_LOG;

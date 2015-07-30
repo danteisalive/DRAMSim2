@@ -42,13 +42,21 @@
 
 #include <cstdlib>
 #include "SimulatorObject.h"
+#include "IniReader.h"
 
 using namespace DRAMSim;
 using namespace std;
 
+
+
+uint64_t SimulatorObject::getClock(){
+	return currentClockCycle;
+}
 void SimulatorObject::step()
 {
-	currentClockCycle++;
+	uint64_t tick = (REFRESH_PERIOD/tCK);
+	currentClockCycle += tick;
+	//currentClockCycle++;
 }
 
 

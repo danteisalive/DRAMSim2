@@ -43,11 +43,11 @@ using namespace std;
 // have global scope even though they are set by IniReader
 
 uint64_t TOTAL_STORAGE;
-unsigned NUM_BANKS;
+unsigned NUM_BANKS = 8;
 unsigned NUM_BANKS_LOG;
 unsigned NUM_CHANS;
 unsigned NUM_CHANS_LOG;
-unsigned NUM_ROWS;
+unsigned NUM_ROWS = 32768;
 unsigned NUM_ROWS_LOG;
 unsigned NUM_COLS;
 unsigned NUM_COLS_LOG;

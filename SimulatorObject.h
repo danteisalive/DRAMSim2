@@ -53,6 +53,7 @@ public:
 	uint64_t currentClockCycle;
 
 	void step();
+	uint64_t getClock();
 	virtual void update()=0;
 };
 }

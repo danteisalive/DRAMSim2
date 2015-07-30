@@ -68,7 +68,8 @@ public:
 	void update();
 	void printStats(bool finalStats = false);
 	void resetStats(); 
-
+	void updateRefreshTable(unsigned rank , unsigned rowsGroup , uint64_t newRef);
+	uint64_t getRefreshTable(unsigned r, unsigned rG);
 
 	//fields
 	vector<Transaction *> transactionQueue;
@@ -106,11 +107,14 @@ private:
 	vector<uint64_t> grandTotalBankAccesses; 
 	vector<uint64_t> totalReadsPerBank;
 	vector<uint64_t> totalWritesPerBank;
-
+	
 	vector<uint64_t> totalReadsPerRank;
 	vector<uint64_t> totalWritesPerRank;
 
-
+    uint64_t** totalRowsAccessesPerBank;   
+    uint64_t** rowsRefreshContdown;
+    uint64_t** rowsRefreshInit;
+    unsigned* refreshRow;
 	vector< uint64_t > totalEpochLatency;
 
 	unsigned channelBitWidth;
@@ -125,10 +129,15 @@ private:
 	
 public:
 	// energy values are per rank -- SST uses these directly, so make these public 
+	uint64_t* scrubingEnergy;
+	uint64_t* testEnergy;
+	unsigned** correctableErrors;
+	unsigned** uncorrectableErrors; 
 	vector< uint64_t > backgroundEnergy;
 	vector< uint64_t > burstEnergy;
 	vector< uint64_t > actpreEnergy;
 	vector< uint64_t > refreshEnergy;
+
 
 };
 }

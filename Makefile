@@ -1,6 +1,5 @@
-CXXFLAGS=-DNO_STORAGE -Wall -DDEBUG_BUILD 
+CXXFLAGS=-DNO_STORAGE -Wall -std=c++11 -DDEBUG_BUILD 
 OPTFLAGS=-O3 
-
 
 ifdef DEBUG
 ifeq ($(DEBUG), 1)
@@ -56,7 +55,7 @@ $(LIB_NAME_MACOS): $(POBJ)
 
 # build all .cpp files to .o files
 %.o : %.cpp
-	g++ $(CXXFLAGS) -o $@ -c $<
+	g++ $(CXXFLAGS) -DLOG_OUTPUT -o $@ -c $<
 
 #po = portable object .. for lack of a better term
 %.po : %.cpp

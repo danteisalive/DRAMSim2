@@ -46,6 +46,9 @@
 #include "Callback.h"
 #include "CSVWriter.h"
 #include <deque>
+#include <map>
+#include <tuple>
+#include <array>
 
 namespace DRAMSim
 {
@@ -55,13 +58,14 @@ class MemorySystem : public SimulatorObject
 	ostream &dramsim_log;
 public:
 	//functions
-	MemorySystem(unsigned id, unsigned megsOfMemory, CSVWriter &csvOut_, ostream &dramsim_log_);
+	MemorySystem(const string &refreshMapFilename, unsigned id, unsigned megsOfMemory, CSVWriter &csvOut_, ostream &dramsim_log_);
 	virtual ~MemorySystem();
 	void update();
 	bool addTransaction(Transaction *trans);
 	bool addTransaction(bool isWrite, uint64_t addr);
 	void printStats(bool finalStats);
 	bool WillAcceptTransaction();
+	unsigned getMaxRefTime( uint64_t rowsRefreshMap , unsigned RowsStates);
 	void RegisterCallbacks(
 	    Callback_t *readDone,
 	    Callback_t *writeDone,
@@ -79,9 +83,24 @@ public:
 	//TODO: make this a functor as well?
 	static powerCallBack_t ReportPower;
 	unsigned systemID;
-
+	enum VRT_STATES { CRIT_STATE=0 ,  LOW_STATE, MED_STATE  , HIGH_STATE  };
+	typedef std::map<uint64_t, std::tuple<unsigned , unsigned , unsigned>>::const_iterator MapIterator ;
+	//////////////////////////////////////////////////////////////////////////////////////////////////
+	
 private:
+	std::map<uint64_t , std::tuple< unsigned , unsigned , unsigned> > VRTCells;
+	std::map< unsigned , std::array<std::vector<std::tuple<unsigned , unsigned>> * , 262144>> VRTTable;
+	unsigned** RowsStates;
+	bool RefreshMap = true;
+	uint64_t** rowsRefreshMap;
 	CSVWriter &csvOut;
+	string refreshMapFilename;
+	uint64_t nextTestCycle;
+	uint64_t testSteps;
+	unsigned nextRowupdate = 0;
+	uint64_t nextVRTTableUpdate;
+	float temperature = 65;
+	unsigned maxRefTest = 1;
 };
 }
 
